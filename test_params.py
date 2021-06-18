@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 
 ##
 import local_config
+six.moves.reload_module(dfm)
 six.moves.reload_module(local_config)
 
 class RectangleDomain(local_config.LocalConfig,dfm.DFlowModel):
@@ -29,6 +30,9 @@ class RectangleDomain(local_config.LocalConfig,dfm.DFlowModel):
     u_avg=0.25
     eta_out=0.5
     z_bed=-2.0
+    run_start=np.datetime64("2016-01-01 00:00")
+    run_stop =np.datetime64("2016-01-04 00:00")
+    fig_num=1
     
     def __init__(self,*a,**k):
         super(RectangleDomain,self).__init__(*a,**k)
@@ -82,7 +86,71 @@ class RectangleDomain(local_config.LocalConfig,dfm.DFlowModel):
         return super(RectangleDomain,self).run_simulation(threads=threads,
                                                           extra_args=extra)
 
+    def run_all(self):
+        """ Bundles the writing/execution of simulation
+        """
+        self.write()
+        self.partition()
+        try:
+            self.run_simulation()
+        except subprocess.CalledProcessError as exc:
+            print("Run failed, with output:")
+            print(exc.output)
+            raise
+    
+    def check(self):
+        """ Load results and submit to check_results(dataset,grid)
+        """
+        map_ds=self.map_ds()
+        g=unstructured_grid.UnstructuredGrid.read_ugrid(map_ds)
+        self.check_results(map_ds,self.his_ds(),g)
+
+    def check_results(self,ds,his,g):
+        print("No checks for %r"%self.__class__)
+
+    def map_ds(self):
+        map_fn=self.map_outputs()[0]
+        ds=xr.open_dataset(map_fn)
+        ds.close()
+        return xr.open_dataset(map_fn)
+    def his_ds(self):
+        his_fn=self.his_output()
+        his=xr.open_dataset(his_fn)
+        his.close()
+        return xr.open_dataset(his_fn)
+
+    def plot(self):
+        map_ds=self.map_ds()
+        g=unstructured_grid.UnstructuredGrid.read_ugrid(map_ds)
+        
+        return self.plot_results(map_ds,self.his_ds(),g)
+
+    def plot_results(self,ds,his,g):
+        fig=plt.figure(1)
+
+        scalars=['mesh2d_ucmag']
+
+        fig.clf()
+        fig,axs=plt.subplots(len(scalars),1,sharex=True,num=self.fig_num,squeeze=False)
+        axs=axs[:,0]
+
+        tidx=-1
+        for ax,scal in zip(axs,scalars):
+            g.plot_edges(color='k',lw=0.5,ax=ax,)
+            
+            if scal=='age':
+                values=ds['mesh2d_NO3'].isel(time=tidx).values / ds['mesh2d_RcNit'].isel(time=tidx).values
+            else:
+                values=ds[scal].isel(time=tidx)
+            ccoll=g.plot_cells(values=values,cmap='jet',ax=ax)
+
+            ax.axis('equal')
+            plt.colorbar(ccoll,ax=ax,label=scal)
+            
 class AgeDomain(RectangleDomain):
+    run_dir='run_age'
+    fig_num=2
+    
     def __init__(self,*a,**k):
         super(AgeDomain,self).__init__(*a,**k)
 
@@ -98,35 +166,75 @@ class AgeDomain(RectangleDomain):
         conc_bc=dfm.DelwaqScalarBC(parent=flow_bc,scalar='RcNit',value=1)
         self.add_bcs([conc_bc])
 
-class PartialAgeDomain(RectangleDomain):
-    def __init__(self,*a,**k):
-        super(PartialAgeDomain,self).__init__(*a,**k)
+    def check_results(self,ds,his,g):
+        ubar=ds['mesh2d_ucmag'].isel(time=-1).values.mean()
+        age=ds['mesh2d_NO3'].isel(time=-1).values / ds['mesh2d_RcNit'].isel(time=-2).values
+        # loose validation
+        age_max_expected=(model.Lx) / ubar / 86400.
+        rel_err=np.abs(age.max() - age_max_expected) / age_max_expected
+        print("Age: max expected %.4f  max result %.4f"%( age_max_expected, age.max()))
+        # Allow 5% error
+        assert rel_err<0.05,"Age doesn't look right"
+        
+    def plot_results(self,ds,his,g):
+        scalars=['mesh2d_ucmag','mesh2d_RcNit','age']
 
-        # Basic age:
-        self.dwaq.add_substance(name='NO3',active=True)
-        self.dwaq.add_substance(name='RcNit',active=True)
-        self.dwaq.add_param(name="TcNit",value=1)
-        self.dwaq.add_process(name="Nitrif_NH4")
+        plt.figure(self.fig_num).clf()
+        fig,axs=plt.subplots(len(scalars),1,sharex=True,num=self.fig_num,squeeze=False)
+        axs=axs[:,0]
 
-        # For partial age, use NH4 to select spatially
-        # This is supposed to end up in the ext file, such as waqparameterNH4
-        # Could have different types for value, and if it's a type that indicates
-        # spatial parameter, then it gets different handling in write_param() ?
-        # Manual says that a spatial or temporal variable set via .ext file
-        # overrules a constant added to the substances file.
-        self.dwaq.add_param(name="NH4",value=1)
+        tidx=-1
+        for ax,scal in zip(axs,scalars):
+            g.plot_edges(color='k',lw=0.5,ax=ax,)
+            
+            if scal=='age':
+                values=ds['mesh2d_NO3'].isel(time=tidx).values / ds['mesh2d_RcNit'].isel(time=tidx).values
+            else:
+                values=ds[scal].isel(time=tidx)
+            ccoll=g.plot_cells(values=values,cmap='jet',ax=ax)
+
+            ax.axis('equal')
+            plt.colorbar(ccoll,ax=ax,label=scal)
+
+
+##
+
+class PartialAgeDomain(AgeDomain):
+    def check_results(self,map_ds,his_ds,g):
+        # Skip AgeDomain
+        super(AgeDomain,self).check_results(map_ds,his_ds,g)
+        
+        ubar=map_ds['mesh2d_ucmag'].isel(time=-1).values.mean()
+        age=map_ds['mesh2d_NO3'].isel(time=-1).values / ds['mesh2d_RcNit'].isel(time=-2).values
+        # loose validation
+        age_max_expected=(model.Lx/2) / ubar / 86400.
+        rel_err=np.abs(age.max() - age_max_expected) / age_max_expected
+        print("Partial age: expected %.4f  results %.4f rel_err=%.3f"%(age_max_expected,age.max(),rel_err))
+        # pretty generous bound here...
+        assert rel_err<0.1,"Partial age doesn't look right"
+        print("Max age looks okay")
+        left_age=age[ g.cells_center()[:,0]<model.Lx/2 ]
+        rel_err=np.abs(left_age/age_max_expected)
+        assert rel_err.max()<0.01,"Shouldn't see age on the left"
+        print("Left-size age looks okay")
+
+class PartialPolyAgeDomain(PartialAgeDomain):
+    """
+    Tests specifying NH4 by polygon in order to get 
+    partial age
+    For partial age, use NH4 to select spatially
+    This is supposed to end up in the ext file, such as waqparameterNH4
+    Could have different types for value, and if it's a type that indicates
+    spatial parameter, then it gets different handling in write_param() ?
+    Manual says that a spatial or temporal variable set via .ext file
+    overrules a constant added to the substances file.
+    """
+    fig_num=3
+    run_dir="run_partial_raster"
 
     def write_forcing(self):
-        super(PartialAgeDomain,self).write_forcing()
-        #self.write_partial_poly()
-        #self.write_partial_raster()
-        self.write_partial_constant_raster()
+        super(PartialPolyAgeDomain,self).write_forcing()
         
-    def write_partial_poly(self):
-        """
-        Tests specifying NH4 by polygon in order to get 
-        partial age
-        """
         bc_fn=self.ext_force_file()
         with open(bc_fn,'at') as fp:
             stanza=f"""
@@ -139,12 +247,22 @@ VALUE=1
 """
             fp.write(stanza)
         pli_fn=os.path.join(self.run_dir,'partial.pol')
-        dio.write_pli(pli_fn, [ ('partial',np.array([ [400,0],
-                                                      [600,0],
-                                                      [600,50],
-                                                      [400,50] ])) ])
+        dio.write_pli(pli_fn, [ ('partial',np.array([ [500,0],
+                                                      [1000,0],
+                                                      [1000,50],
+                                                      [500,50] ])) ])
 
-    def write_partial_constant_raster(self):
+
+class PartialRasterAgeDomain(PartialAgeDomain):
+    """
+    Tests specifying NH4 by constant in time raster
+    """
+    fig_num=4
+    run_dir="run_partial_raster"
+    
+    def write_forcing(self):
+        super(PartialRasterAgeDomain,self).write_forcing()
+        
         bc_fn=self.ext_force_file()
         with open(bc_fn,'at') as fp:
             # filetype 11: netcdf gridded data
@@ -155,14 +273,16 @@ VALUE=1
 
             stanza=f"""
 QUANTITY=waqsegmentfunctionNH4
-FILENAME=partial.nc
+FILENAME=nh4.nc
 VARNAME=nh4
 FILETYPE=11
 METHOD=3
 OPERAND=O
 """
             fp.write(stanza)
-
+        self.nh4_raster().to_netcdf( os.path.join(self.run_dir,'nh4.nc') )
+            
+    def nh4_raster(self):
         # Use a field to define the raster
         nh4=field.SimpleGrid( extents=[0,self.Lx,0,self.Ly],
                               F=np.zeros([100,30]) )
@@ -183,93 +303,17 @@ OPERAND=O
         ds['nh4']=('time','y','x'), np.stack([nh4.F,nh4.F])
         # Must be at least 2 timesteps
         ds['time']=('time',), np.r_[self.run_start,self.run_stop]
+        return ds
 
-        ds.to_netcdf( os.path.join(self.run_dir,'partial.nc') )
-
-    def set_inflow(self):
-        flow_bc=super(PartialAgeDomain,self).set_inflow()
-        conc_bc=dfm.DelwaqScalarBC(parent=flow_bc,scalar='RcNit',value=1)
-        self.add_bcs([conc_bc])
-
-def test_partial_age():
-    # Age accumulates only in right/downstream half of the domain.
-    model=PartialAgeDomain(run_start=np.datetime64("2016-01-01 00:00"),
-                           run_stop =np.datetime64("2016-01-04 00:00"),
-                           run_dir="run_partial")
-
-    model.write()
-    model.partition()
-    try:
-        model.run_simulation()
-    except subprocess.CalledProcessError as exc:
-        print("Run failed, with output:")
-        print(exc.output)
-        raise
-
-    maps=model.map_outputs()
-    ds=xr.open_dataset(maps[0])
-    ds.close()
-    ds=xr.open_dataset(maps[0])
-
-    g=unstructured_grid.UnstructuredGrid.read_ugrid(ds)
-
-    ubar=ds['mesh2d_ucmag'].isel(time=-1).values.mean()
-    age=ds['mesh2d_NO3'].isel(time=-1).values / ds['mesh2d_RcNit'].isel(time=-2).values
-    # loose validation
-    age_max_expected=(model.Lx/2) / ubar / 86400.
-    rel_err=np.abs(age.max() - age_max_expected) / age_max_expected
-    assert rel_err<0.02,"Partial age doesn't look right"
-    left_age=age[ g.cells_center()[:,0]<model.Lx/2 ]
-    rel_err=np.abs(left_age/age_max_expected)
-    assert rel_err.max()<0.01,"Shouldn't see age on the left"
-
-    fig=plt.figure(1)
-    fig.clf()
-
-    scalars=['mesh2d_ucmag','mesh2d_RcNit','age']
-
-    fig,axs=plt.subplots(len(scalars),1,sharex=True,num=1)
-
-    for ax,scal in zip(axs,scalars):
-        g.plot_edges(color='k',lw=0.5,ax=ax,)
-
-        if scal=='age':
-            values=ds['mesh2d_NO3'].isel(time=-1).values / ds['mesh2d_RcNit'].isel(time=-2).values
-        else:
-            values=ds[scal].isel(time=-1)
-        ccoll=g.plot_cells(values=values,cmap='jet',ax=ax)
-
-        ax.axis('equal')
-        plt.colorbar(ccoll,ax=ax,label=scal)
-    fig.savefig(os.path.join(model.run_dir,"age-plot.png"))
-
-# test_partial_age()    
-## 
-
-class SpatioTemporalAgeDomain(PartialAgeDomain):
-    def write_forcing(self):
-        super(SpatioTemporalAgeDomain,self).write_forcing()
-        self.write_spatiotemporal_raster()
     
-    def write_spatiotemporal_raster(self):
-        bc_fn=self.ext_force_file()
-        with open(bc_fn,'at') as fp:
-            # filetype 11: netcdf gridded data
-            # method 3: interpolate time and space, save coefficients
-            # How to structure the nc file?
-            # There is one example file in the distribution
-            # "04_testcases/Example Testcases/f011_wind/c055_curvi_netcdf/wind_deltares_matroos_hirlam72_20150418.nc"
+class SpatioTemporalAgeDomain(PartialRasterAgeDomain):
+    """
+    vary nh4 in time, too, by way of time-varying raster.
+    """
+    fig_num=5
+    run_dir="run_spatiotemporal"
 
-            stanza=f"""
-QUANTITY=waqsegmentfunctionNH4
-FILENAME=spatiotemporal.nc
-VARNAME=nh4
-FILETYPE=11
-METHOD=3
-OPERAND=O
-"""
-            fp.write(stanza)
-
+    def nh4_raster(self):
         # Use a field to define the raster
         nh4=field.SimpleGrid( extents=[0,self.Lx,0,self.Ly],
                               F=np.zeros([100,30]) )
@@ -290,65 +334,56 @@ OPERAND=O
         ds['nh4']=('time','y','x'), np.stack([0*nh4.F,0*nh4.F,nh4.F])
         t_mid = self.run_start + (self.run_stop - self.run_start)/2
         ds['time']=('time',), np.r_[self.run_start,t_mid,self.run_stop]
-
-        ds.to_netcdf( os.path.join(self.run_dir,'spatiotemporal.nc') )
-
-#def test_spatiotemporal_age():
-if 1:
-    # Age accumulates only in right/downstream half of the domain,
-    # and only during the second half of the run
-    model=SpatioTemporalAgeDomain(run_start=np.datetime64("2016-01-01 00:00"),
-                                  run_stop =np.datetime64("2016-01-04 00:00"),
-                                  run_dir="run_spatiotemporal")
-
-    model.write()
-    model.partition()
-    try:
-        model.run_simulation()
-    except subprocess.CalledProcessError as exc:
-        print("Run failed, with output:")
-        print(exc.output)
-        raise
-
-    maps=model.map_outputs()
-    ds=xr.open_dataset(maps[0])
-    ds.close()
-    ds=xr.open_dataset(maps[0])
-
+        return ds
     
+    def check_results(self,map_ds,his_ds,g):
+        super(SpatioTemporalAgeDomain,self).check_results(map_ds,his_ds,g)
         
-# Basic age:
-# Specify a constant in time, spatially variable.
+        n_times=len(map_ds.time)
+        t_idx=n_times//2 - 1
+        age=map_ds['mesh2d_NO3'].isel(time=t_idx).values / ds['mesh2d_RcNit'].isel(time=t_idx).values
 
-# At 0.25 m/s, domain is 1000m long, so max age should be (1000/0.25) / 86400
-# or 0.046.  That checks out.
+        assert age.max()<0.01,"Shouldn't see any age in first half of run"
+        print("Time-varying age looks okay")
+
+
+def test_rectangle():
+    model=RectangleDomain(run_dir="run_rectangle")
+    model.run_all()
+    model.check()
+    model.plot()
+
+def test_age():
+    model=AgeDomain(run_dir="run_age")
+    model.run_all()
+    model.check()
+    model.plot()
+
+def test_poly_age():
+    model=PartialPolyAgeDomain()
+    model.run_all()
+    model.check()
+    model.plot()
+
+def test_raster_age():
+    model=PartialRasterAgeDomain()
+    model.run_all()
+    model.check()
+    model.plot()
+
+def test_unsteady_raster_age():
+    model=SpatioTemporalAgeDomain()
+    model.run_all()
+    model.check()
+    model.plot()
+
+# test_poly_age()
+# test_raster_age()
+# test_unsteady_raster_age()
+    
 
 ##
 
-fig=plt.figure(1)
+# Run test_partial, but with a regenerated proc_def.def
 
-scalars=['mesh2d_ucmag','mesh2d_RcNit','age']
-
-
-for tidx in range(0,ds.dims['time'],10):
-    print(tidx)
-    fig.clf()
-    fig,axs=plt.subplots(len(scalars),1,sharex=True,num=1)
-    
-    for ax,scal in zip(axs,scalars):
-        g.plot_edges(color='k',lw=0.5,ax=ax,)
-
-        if scal=='age':
-            values=ds['mesh2d_NO3'].isel(time=tidx).values / ds['mesh2d_RcNit'].isel(time=tidx).values
-        else:
-            values=ds[scal].isel(time=tidx)
-        ccoll=g.plot_cells(values=values,cmap='jet',ax=ax)
-
-        ax.axis('equal')
-        plt.colorbar(ccoll,ax=ax,label=scal)
-    fig.canvas.draw()
-    plt.pause(0.1)
-
-# This code is working
-# Can specify a polygon-based age field, raster constant, or raster/changing.
 

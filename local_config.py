@@ -1,6 +1,7 @@
 import os
 
-dfm_lnx64="/opt/delft3dfm_2021.03/lnx64"                                                                                                              
+#dfm_lnx64="/opt/delft3dfm_2021.03/lnx64"
+dfm_lnx64="/home/rusty/src/dfm/r68819-dbg"
 os.environ['LD_LIBRARY_PATH']=os.path.join(dfm_lnx64,'lib')                                                                                           
   
 class LocalConfig(object):
