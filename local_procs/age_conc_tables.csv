@@ -1,0 +1,78 @@
+Process: AgeConc00
+Inputs: conc00
+Outputs: agec00
+fortran module: AGECONC
+fluxes: dAgeC00
+
+inputs.csv:
+#  so AgeConc will be the name of my process
+#  for nitrif, inpude is mostly Y, but N for NH4
+#  and DELT.
+#  depth varying??
+
+inpupr,inpuit,inpunm,inpude,inpudo,inpusx
+"AgeConc00","conc00    ",   1,"N","x",1
+"AgeConc00","DELT      ",   2,"N","x",1
+
+disps.csvs, grpsub.csv: Ignore
+
+
+fortran.csv
+fortid
+"AGECONC"
+
+Don't know what this is for -- maybe a list of substances available
+in various contexts?
+
+con_sub.csv
+"Delft3D   ","conc00    "
+"Delft3D   ","agec00    "
+"Sobek     ","conc00    "
+"Sobek     ","agec00    "
+"ECO       ","conc00    "
+"ECO       ","agec00    "
+"WAQ       ","conc00    "
+"WAQ       ","agec00    "
+
+Similar but for processes. I dropped a trailing quote
+
+con_pro.csv
+"Config:   ","WAQ       ","ECO       ","Sobek     ","Delft3D   ",
+"AgeConc00 ",A,A,A,A,
+
+# Not sure I need velocities -- seems like that would be for
+# specifying settling of individual things?
+velocs.csv:
+veloit,velosu,velosc
+"VxUpAgeC00","AgeC00    ",   1.00000
+"VxDnAgeC00","AgeC00    ",   1.00000
+
+# Translate fluxes into scalar updates
+stochi.csv:
+stocfl,stocsu,stocsc
+"dAgeC00   ","AgeC00    ",   1.00000
+
+proces.csv:  123 is something about dimensions in which it has transport?
+
+procid,procco,procfo,procnm
+"AgeConc00 ",123,"AGECONC   ","Integration of age concentration                  "
+
+# Come back to outputs.  I think this is substances that are automatically
+# created when the process is activate, but I think for the moment I'll
+# keep things simpler.
+# "Nitrif_NH4","O2FuncNIT ",   1,"x",1
+
+#  # That's process, item, number, don't know, don't know.
+#  outputs.csv:
+#  outppr,outpit,outpnm,outpdo,outpsx
+#  "AgeConc00 ","agec00    ",   1,"x",1
+
+outpflx.csv:
+outfpr,outffl,outfnm,outfdo
+"AgeConc00 ","dAgeC00   ",   1,"x"
+
+items.csv:
+itemid,itemse,itemex,itemde,itemun,itemnm,itemag,itemda,itemwk,itemgr
+"dAgeC00   ","x"," ",   -999.000    ,"(g s/m3/d)          ","age concentration flux                            ","volume    ","volume    "," ","                              "
+"AgeC00    ","x"," ",    0.00000    ,"(g s/m3)            ","Age concentration 00                              ","volume    ","volume    ","x","                              "
+
