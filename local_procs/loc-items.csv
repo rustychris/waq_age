@@ -1,0 +1,5 @@
+itemid,itemse,itemex,itemde,itemun,itemnm,itemag,itemda,itemwk,itemgr
+"dAgeC00   ","x"," ",   -999.000    ,"(g s/m3/d)          ","age concentration flux                            ","volume    ","volume    "," ","                              "
+"AgeC00    ","x"," ",    0.00000    ,"(g s/m3)            ","Age concentration 00                              ","volume    ","volume    ","x","                              "
+"Conc00    ","x"," ",    0.00000    ,"(g/m3)              ","Concentration 00 for age                          ","volume    ","volume    ","x","                              "
+

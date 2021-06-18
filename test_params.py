@@ -10,6 +10,7 @@ import stompy.model.hydro_model as hm
 import stompy.model.delft.dflow_model as dfm
 import stompy.model.delft.io as dio
 from stompy.spatial import field
+from stompy import utils
 
 from stompy.grid import unstructured_grid
 import numpy as np
@@ -386,4 +387,34 @@ def test_unsteady_raster_age():
 
 # Run test_partial, but with a regenerated proc_def.def
 
+class LocalAgeDomain(AgeDomain):
+    run_dir='run_localage'
+    fig_num=6
+
+    proc_csv_dir="waq_tables"
+
+    def compile_waq(self):
+        utils.call_with_path(os.path.join(self.dfm_bin_dir,"waqpbexport"),
+                             self.proc_csv_dir)
+        
+    def run_simulation(self,threads=1,extra_args=[]):
+        """
+        Add in the Delwaq command line arguments
+        """
+        extra=extra_args+["--processlibrary",os.path.abspath(os.path.join(self.proc_csv_dir,"proc_def.def"))]
+    
+        return super(RectangleDomain,self).run_simulation(threads=threads,
+                                                          extra_args=extra)
+            
+#def test_local_age():
+model=LocalAgeDomain()
+# model.compile_waq()
+model.run_all()
+model.check()
+#model.plot()
+
+
+##
+
+# Try to create my own process!?
 
