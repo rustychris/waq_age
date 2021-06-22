@@ -1,6 +1,9 @@
 !     !     Testing locally defined WAQ processes
 ! other modules have no underscores, so i'm sticking with that.
-      
+!     f902c.cpp is looking for "AGECONC",
+!     when this is named 'ageconc', the symbol is ageconc_
+!     changing capitalization here does not change capitalization
+!     in the library though.
       subroutine ageconc ( pmsa   , fl     , ipoint , increm , noseg  ,
      &                      noflux , iexpnt , iknmrk , noq1   , noq2   ,
      &                      noq3   , noq4   )
@@ -74,17 +77,18 @@
       INTEGER  IPOINT( * ) , INCREM(*) , NOSEG , NOFLUX,
      +         IEXPNT(4,*) , IKNMRK(*) , NOQ1, NOQ2, NOQ3, NOQ4
 !
-      INTEGER  IP1
-      INTEGER  IN1
+      INTEGER  IP1, IP2
+      INTEGER  IN1, IN2
       INTEGER  IFLUX, ISEG
       REAL     CONC
       REAL     DELT
-      REAL     FLNIT
       
 ! original code had 19 of these
-      IN1  = INCREM( 1) ! CONC
-      IP1  = IPOINT( 1) ! CONC
-!
+      IN1  = INCREM( 1)         ! CONC
+      IP1  = IPOINT( 1)         ! 
+      IN2  = INCREM( 2)         ! DELT
+      IP2  = IPOINT( 2)         ! 
+
       IFLUX = 0
       DO 9000 ISEG = 1 , NOSEG
          !! CALL DHKMRK(1,IKNMRK(ISEG),IKMRK1)
@@ -95,11 +99,11 @@
             CONC   = MAX ( 0.0, PMSA(IP1 ) )
             DELT   = PMSA(IP2) 
             FL( 1 + IFLUX ) = CONC
-            
          ENDIF
 
          IFLUX = IFLUX + NOFLUX
          IP1   = IP1   + IN1
+         IP2   = IP2   + IN2
 
  9000 CONTINUE
 

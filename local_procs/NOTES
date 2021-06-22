@@ -1,0 +1,7 @@
+Name of the module given to waq must match how the linker will put it in
+the so file.
+This seems to mean lowercase (regardless of case in the .f file), and an
+underscore suffix.
+
+So 'subroutine AGECONC(...)' is referenced as 'ageconc_' wherever the fortran
+module appears (fortran.csv, proces.csv)

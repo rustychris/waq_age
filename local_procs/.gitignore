@@ -18,3 +18,7 @@ velocs.csv
 procesm.asc
 waqpb_export.log
 coefedit.dat
+*.log
+liblocalprocess.*
+ageconc.lo
+ageconc.o
