@@ -45,6 +45,7 @@ class RectangleDomain(local_config.LocalConfig,dfm.DFlowModel):
         self.set_grid()
         self.mdu['output','MapFormat']=4
         self.mdu['output','MapInterval']=3600
+        self.mdu['physics','Dicouv']=0.0
         self.set_bcs()
 
     def set_bcs(self):
@@ -432,6 +433,9 @@ class LocalAgeDomain(AgeDomain):
                 values=map_ds[scal].isel(time=tidx)
             ccoll=g.plot_cells(values=values,cmap='jet',ax=ax)
 
+            if scal=='mesh2d_conc00':
+                ccoll.set_clim([0.9,1.1])
+
             ax.axis('equal')
             plt.colorbar(ccoll,ax=ax,label=scal)
 
@@ -450,3 +454,8 @@ def test_local_age():
 #test_raster_age()
 #test_unsteady_raster_age()
 #test_local_age()
+
+# Next steps:
+#  Test in 3D
+#  Test exposure with exposure to x coordinate, y coordinate, z coordinate.
+
